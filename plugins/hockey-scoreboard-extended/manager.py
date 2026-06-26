@@ -13,6 +13,20 @@ from game_filter import HockeyGameFilter
 from game_renderer import GameRenderer
 from logo_downloader import ensure_logos
 
+try:
+    from src.plugin_system.base_plugin import BasePlugin
+except ImportError:
+    # Fallback so the module can be imported outside LEDMatrix (tests, etc.)
+    class BasePlugin:  # type: ignore[no-redef]
+        def __init__(self, plugin_id, config, display_manager, cache_manager, plugin_manager):
+            self.plugin_id = plugin_id
+            self.config = config
+            self.display_manager = display_manager
+            self.cache_manager = cache_manager
+            self.plugin_manager = plugin_manager
+            self.logger = logging.getLogger(f"plugin.{plugin_id}")
+            self.enabled = config.get("enabled", True)
+
 
 # HockeyTech GameStatus codes
 _STATUS_LIVE = {"2", "3"}
@@ -91,7 +105,7 @@ def _ht_to_renderer(game: Dict, league: str) -> Dict:
     }
 
 
-class HockeyScoreboardExtendedPlugin:
+class HockeyScoreboardExtendedPlugin(BasePlugin):
     """
     LEDMatrix plugin displaying PWHL and OHL scores.
 
@@ -111,10 +125,7 @@ class HockeyScoreboardExtendedPlugin:
         cache_manager=None,
         plugin_manager=None,
     ):
-        self.plugin_id = plugin_id
-        self.display_manager = display_manager
-        self.logger = logging.getLogger(plugin_id)
-
+        super().__init__(plugin_id, config, display_manager, cache_manager, plugin_manager)
         self._apply_config(config)
 
         self._pwhl = PWHLDataSource(self.logger)
@@ -246,6 +257,7 @@ class HockeyScoreboardExtendedPlugin:
 
     def on_config_change(self, new_config: Dict[str, Any]) -> None:
         prev_league = self._active_league()
+        super().on_config_change(new_config)  # updates self.config and self.enabled
         self._apply_config(new_config)
         new_league = self._active_league()
 

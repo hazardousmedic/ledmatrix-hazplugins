@@ -8,19 +8,6 @@
       "default": false,
       "description": "Enable or disable this plugin"
     },
-    "display_mode": {
-      "type": "string",
-      "enum": [
-        "pwhl_live",
-        "pwhl_recent",
-        "pwhl_upcoming",
-        "ohl_live",
-        "ohl_recent",
-        "ohl_upcoming"
-      ],
-      "default": "pwhl_live",
-      "description": "Which league and game state to display"
-    },
     "defaults": {
       "type": "object",
       "description": "Default settings inherited by each league (can be overridden per league)",
@@ -134,5 +121,5 @@
       }
     }
   },
-  "required": ["display_mode"]
+  "required": []
 }

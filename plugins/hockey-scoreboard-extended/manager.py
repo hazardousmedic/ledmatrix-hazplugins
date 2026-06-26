@@ -3,6 +3,10 @@ HockeyScoreboardExtendedPlugin — entry point for LEDMatrix.
 
 Covers PWHL and OHL; deliberately excludes NHL, NCAA Men's, and NCAA Women's
 hockey which are handled by the official hockey-scoreboard plugin.
+
+LEDMatrix rotates through every entry in manifest.json display_modes and calls
+display(display_mode="pwhl_live") etc. on each turn. update() pre-fetches data
+for all modes so each display() call renders instantly from cache.
 """
 
 import logging
@@ -16,7 +20,6 @@ from logo_downloader import ensure_logos
 try:
     from src.plugin_system.base_plugin import BasePlugin
 except ImportError:
-    # Fallback so the module can be imported outside LEDMatrix (tests, etc.)
     class BasePlugin:  # type: ignore[no-redef]
         def __init__(self, plugin_id, config, display_manager, cache_manager, plugin_manager):
             self.plugin_id = plugin_id
@@ -28,27 +31,26 @@ except ImportError:
             self.enabled = config.get("enabled", True)
 
 
-# HockeyTech GameStatus codes
 _STATUS_LIVE = {"2", "3"}
 _STATUS_FINAL = {"4"}
 _STATUS_UPCOMING = {"1"}
 
+_ALL_MODES = [
+    "pwhl_live", "pwhl_recent", "pwhl_upcoming",
+    "ohl_live",  "ohl_recent",  "ohl_upcoming",
+]
+
+
+def _league_of(mode: str) -> str:
+    return "pwhl" if mode.startswith("pwhl") else "ohl"
+
+
+def _type_of(mode: str) -> str:
+    return mode.split("_", 1)[1]  # "live" / "recent" / "upcoming"
+
 
 def _ht_to_renderer(game: Dict, league: str) -> Dict:
-    """
-    Convert a HockeyTech scorebar game dict into the shape GameRenderer expects.
-
-    HockeyTech source fields:
-        HomeCode / VisitorCode        — team abbreviations
-        HomeLongName / VisitorLongName
-        HomeGoals / VisitorGoals      — score strings
-        HomeWins / HomeRegulationLosses / HomeOTLosses / HomeShootoutLosses
-        GameStatus                    — "1" upcoming / "2","3" live / "4" final
-        GameStatusString              — e.g. "7:05PM" or "Final"
-        PeriodNameLong                — e.g. "3rd", "OT"
-        GameClock                     — MM:SS remaining
-        GameDateISO8601               — ISO 8601 start time with tz
-    """
+    """Convert a HockeyTech scorebar dict into the shape GameRenderer expects."""
     status_code = str(game.get("GameStatus", "1"))
 
     if status_code in _STATUS_LIVE:
@@ -75,8 +77,8 @@ def _ht_to_renderer(game: Dict, league: str) -> Dict:
         "league": league,
         "home_team": {
             "abbrev": game.get("HomeCode", ""),
-            "name": game.get("HomeLongName", ""),
-            "score": game.get("HomeGoals", "0"),
+            "name":   game.get("HomeLongName", ""),
+            "score":  game.get("HomeGoals", "0"),
             "record": record(
                 game.get("HomeWins", 0),
                 game.get("HomeRegulationLosses", 0),
@@ -86,8 +88,8 @@ def _ht_to_renderer(game: Dict, league: str) -> Dict:
         },
         "away_team": {
             "abbrev": game.get("VisitorCode", ""),
-            "name": game.get("VisitorLongName", ""),
-            "score": game.get("VisitorGoals", "0"),
+            "name":   game.get("VisitorLongName", ""),
+            "score":  game.get("VisitorGoals", "0"),
             "record": record(
                 game.get("VisitorWins", 0),
                 game.get("VisitorRegulationLosses", 0),
@@ -96,9 +98,9 @@ def _ht_to_renderer(game: Dict, league: str) -> Dict:
             ),
         },
         "status": {
-            "state": state,
+            "state":        state,
             "short_detail": short_detail,
-            "period": period,
+            "period":       period,
             "display_clock": clock,
         },
         "start_time": game.get("GameDateISO8601", ""),
@@ -109,12 +111,9 @@ class HockeyScoreboardExtendedPlugin(BasePlugin):
     """
     LEDMatrix plugin displaying PWHL and OHL scores.
 
-    Instantiation signature matches what plugin_loader.py passes:
-        plugin_id, config, display_manager, cache_manager, plugin_manager
-
-    display_modes (declared in manifest.json):
-        pwhl_live / pwhl_recent / pwhl_upcoming
-        ohl_live  / ohl_recent  / ohl_upcoming
+    All six display modes rotate automatically — LEDMatrix passes the current
+    mode name into display(display_mode=...) on each call. No per-mode config
+    selection needed.
     """
 
     def __init__(
@@ -126,21 +125,21 @@ class HockeyScoreboardExtendedPlugin(BasePlugin):
         plugin_manager=None,
     ):
         super().__init__(plugin_id, config, display_manager, cache_manager, plugin_manager)
-        self._apply_config(config)
 
         self._pwhl = PWHLDataSource(self.logger)
-        self._ohl = OHLDataSource(self.logger)
+        self._ohl  = OHLDataSource(self.logger)
         self._filter = HockeyGameFilter(self.logger)
 
-        self._games: List[Dict] = []
-        self._game_index = 0
+        # Per-mode game lists and cycle indices
+        self._games:      Dict[str, List[Dict]] = {m: [] for m in _ALL_MODES}
+        self._game_idx:   Dict[str, int]        = {m: 0  for m in _ALL_MODES}
 
-        # Download any missing logos for the active league at startup
-        league = self._active_league()
-        try:
-            ensure_logos(league)
-        except Exception:
-            self.logger.warning(f"Logo download failed for {league}, continuing without logos")
+        # Download logos for both leagues at startup
+        for league in ("pwhl", "ohl"):
+            try:
+                ensure_logos(league)
+            except Exception:
+                self.logger.warning(f"Logo download failed for {league}, continuing without logos")
 
         w = getattr(display_manager, "width", 64)
         h = getattr(display_manager, "height", 32)
@@ -155,60 +154,60 @@ class HockeyScoreboardExtendedPlugin(BasePlugin):
     # Config helpers
     # ------------------------------------------------------------------
 
-    def _apply_config(self, config: Dict[str, Any]) -> None:
-        self.config = config
-        self.display_mode: str = config.get("display_mode", "pwhl_live")
-
-    def _active_league(self) -> str:
-        return "pwhl" if self.display_mode.startswith("pwhl") else "ohl"
-
-    def _active_mode_type(self) -> str:
-        return self.display_mode.split("_", 1)[1]  # "live" / "recent" / "upcoming"
-
-    def _league_cfg(self) -> Dict[str, Any]:
-        """
-        Merge defaults → league-specific overrides into one flat dict.
-        League block wins over defaults block wins over hardcoded fallbacks.
-        """
+    def _league_cfg(self, league: str) -> Dict[str, Any]:
+        """Merge defaults → league overrides for the given league."""
         defaults = self.config.get("defaults", {})
-        league_overrides = self.config.get(self._active_league(), {})
-        return {**defaults, **league_overrides}
+        overrides = self.config.get(league, {})
+        return {**defaults, **overrides}
 
     # ------------------------------------------------------------------
     # Required plugin interface
     # ------------------------------------------------------------------
 
     def update(self) -> None:
-        """Refresh game data from the API. Called on update_interval schedule."""
-        raw = self._fetch()
+        """Fetch and cache game data for every mode in one pass."""
+        league_cfgs = {lg: self._league_cfg(lg) for lg in ("pwhl", "ohl")}
 
-        league = self._active_league()
-        mode_type = self._active_mode_type()
-        league_cfg = self._league_cfg()
+        recent_days  = {lg: int(league_cfgs[lg].get("recent_days",   2)) for lg in ("pwhl", "ohl")}
+        upcoming_days= {lg: int(league_cfgs[lg].get("upcoming_days", 3)) for lg in ("pwhl", "ohl")}
 
-        # Convert to renderer dicts
-        converted = [_ht_to_renderer(g, league) for g in raw]
+        raw: Dict[str, List[Dict]] = {
+            "pwhl_live":     self._pwhl.fetch_live_games(),
+            "pwhl_recent":   self._pwhl.fetch_recent_games(recent_days["pwhl"]),
+            "pwhl_upcoming": self._pwhl.fetch_upcoming_games(upcoming_days["pwhl"]),
+            "ohl_live":      self._ohl.fetch_live_games(),
+            "ohl_recent":    self._ohl.fetch_recent_games(recent_days["ohl"]),
+            "ohl_upcoming":  self._ohl.fetch_upcoming_games(upcoming_days["ohl"]),
+        }
 
-        # Apply favourite filtering, sorting, and game-count limits
-        self._games = self._filter.filter_and_sort(converted, mode_type, league_cfg)
-        self._game_index = 0
-
-        self.logger.debug(
-            f"{league.upper()} {mode_type}: {len(self._games)} games after filtering"
-        )
+        for mode in _ALL_MODES:
+            league = _league_of(mode)
+            mode_type = _type_of(mode)
+            converted = [_ht_to_renderer(g, league) for g in raw[mode]]
+            self._games[mode] = self._filter.filter_and_sort(
+                converted, mode_type, league_cfgs[league]
+            )
+            self._game_idx[mode] = 0
+            self.logger.debug(f"{mode}: {len(self._games[mode])} games")
 
     def display(self, force_clear: bool = False, display_mode: str = "") -> bool:
         """
-        Render one game card to the matrix.
-        Returns True if content was shown, False if nothing to show
-        (signals LEDMatrix to skip to the next plugin).
+        Render one game card for the given display_mode.
+        LEDMatrix passes the current rotation slot as display_mode.
+        Returns False (skip) when there are no games for this mode.
         """
-        if not self._games:
+        mode = display_mode or "pwhl_live"
+        if mode not in _ALL_MODES:
+            self.logger.warning(f"Unknown display_mode: {mode}")
             return False
 
-        game = self._games[self._game_index]
-        success = self._render(game, self._active_mode_type())
-        self._game_index = (self._game_index + 1) % len(self._games)
+        games = self._games.get(mode, [])
+        if not games:
+            return False
+
+        idx = self._game_idx[mode]
+        success = self._render(games[idx], _type_of(mode))
+        self._game_idx[mode] = (idx + 1) % len(games)
         return success
 
     def cleanup(self) -> None:
@@ -219,83 +218,45 @@ class HockeyScoreboardExtendedPlugin(BasePlugin):
     # ------------------------------------------------------------------
 
     def get_display_duration(self) -> float:
-        return float(self._league_cfg().get("display_duration", 15))
+        # Use the first league's config as the duration source
+        return float(self._league_cfg("pwhl").get("display_duration", 15))
 
     def is_cycle_complete(self) -> bool:
-        """True once every game in the current list has been shown once."""
-        return self._game_index == 0
+        """True once all games across all modes have been shown once."""
+        return all(idx == 0 for idx in self._game_idx.values())
 
     # ------------------------------------------------------------------
     # Optional interface — live priority
     # ------------------------------------------------------------------
 
     def has_live_priority(self) -> bool:
-        """Whether this plugin can interrupt the normal rotation for live games."""
-        return bool(self._league_cfg().get("live_priority", True))
+        return (
+            bool(self._league_cfg("pwhl").get("live_priority", True)) or
+            bool(self._league_cfg("ohl").get("live_priority", True))
+        )
 
     def has_live_content(self) -> bool:
-        """True if there is currently at least one live game."""
         if not self.has_live_priority():
             return False
-        # Check without touching self._games so we don't disrupt the current cycle
-        league = self._active_league()
-        src = self._pwhl if league == "pwhl" else self._ohl
         try:
-            live = src.fetch_live_games()
-            return len(live) > 0
+            return (
+                len(self._pwhl.fetch_live_games()) > 0 or
+                len(self._ohl.fetch_live_games()) > 0
+            )
         except Exception:
             return False
 
     def get_live_modes(self) -> List[str]:
-        """Display modes to activate during a live-priority takeover."""
-        league = self._active_league()
-        return [f"{league}_live"]
+        return ["pwhl_live", "ohl_live"]
 
     # ------------------------------------------------------------------
     # Optional interface — hot-reload
     # ------------------------------------------------------------------
 
     def on_config_change(self, new_config: Dict[str, Any]) -> None:
-        prev_league = self._active_league()
-        super().on_config_change(new_config)  # updates self.config and self.enabled
-        self._apply_config(new_config)
-        new_league = self._active_league()
-
-        # Download logos if switching to a league whose logos may not exist yet
-        if new_league != prev_league:
-            try:
-                ensure_logos(new_league)
-            except Exception:
-                self.logger.warning(f"Logo download failed for {new_league}")
-
-        self._games = []
-        self._game_index = 0
-
-    # ------------------------------------------------------------------
-    # Data fetching
-    # ------------------------------------------------------------------
-
-    def _fetch(self) -> List[Dict]:
-        league_cfg = self._league_cfg()
-        recent_days = int(league_cfg.get("recent_days", 2))
-        upcoming_days = int(league_cfg.get("upcoming_days", 3))
-
-        mode = self.display_mode
-        if mode == "pwhl_live":
-            return self._pwhl.fetch_live_games()
-        if mode == "pwhl_recent":
-            return self._pwhl.fetch_recent_games(recent_days)
-        if mode == "pwhl_upcoming":
-            return self._pwhl.fetch_upcoming_games(upcoming_days)
-        if mode == "ohl_live":
-            return self._ohl.fetch_live_games()
-        if mode == "ohl_recent":
-            return self._ohl.fetch_recent_games(recent_days)
-        if mode == "ohl_upcoming":
-            return self._ohl.fetch_upcoming_games(upcoming_days)
-
-        self.logger.warning(f"Unknown display_mode: {mode}")
-        return []
+        super().on_config_change(new_config)
+        self._games    = {m: [] for m in _ALL_MODES}
+        self._game_idx = {m: 0  for m in _ALL_MODES}
 
     # ------------------------------------------------------------------
     # Rendering

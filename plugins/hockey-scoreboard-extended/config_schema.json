@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hockey Scoreboard Extended Config",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable or disable this plugin"
+    },
+    "display_mode": {
+      "type": "string",
+      "enum": [
+        "pwhl_live",
+        "pwhl_recent",
+        "pwhl_upcoming",
+        "ohl_live",
+        "ohl_recent",
+        "ohl_upcoming"
+      ],
+      "default": "pwhl_live",
+      "description": "Which league and game state to display"
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default settings inherited by each league (can be overridden per league)",
+      "properties": {
+        "display_duration": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "maximum": 60,
+          "description": "Seconds to display each game card"
+        },
+        "show_records": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show team win-loss records on each card"
+        },
+        "favorite_teams": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Team abbreviations to prioritise (e.g. [\"TOR\", \"OTT\"]). Favourite-team games always appear first."
+        },
+        "favorite_teams_only": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, only show games involving a favourite team"
+        },
+        "live_games_to_show": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "description": "Max live games to display"
+        },
+        "recent_games_to_show": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "description": "Max recent (final) games to display"
+        },
+        "upcoming_games_to_show": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "description": "Max upcoming games to display"
+        },
+        "recent_days": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 7,
+          "description": "How many days back to look for recent games"
+        },
+        "upcoming_days": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 14,
+          "description": "How many days ahead to look for upcoming games"
+        },
+        "live_priority": {
+          "type": "boolean",
+          "default": true,
+          "description": "Interrupt the normal display rotation when a live game is in progress"
+        },
+        "update_interval_seconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 30,
+          "description": "How often to refresh game data from the API"
+        }
+      }
+    },
+    "pwhl": {
+      "type": "object",
+      "description": "PWHL-specific overrides (all defaults fields are valid here too)",
+      "properties": {
+        "logo_dir": {
+          "type": "string",
+          "default": "assets/sports/pwhl_logos",
+          "description": "Path to PWHL logo PNGs"
+        },
+        "favorite_teams": { "type": "array", "items": { "type": "string" } },
+        "favorite_teams_only": { "type": "boolean" },
+        "live_games_to_show": { "type": "integer" },
+        "recent_games_to_show": { "type": "integer" },
+        "upcoming_games_to_show": { "type": "integer" },
+        "recent_days": { "type": "integer" },
+        "upcoming_days": { "type": "integer" },
+        "live_priority": { "type": "boolean" },
+        "show_records": { "type": "boolean" }
+      }
+    },
+    "ohl": {
+      "type": "object",
+      "description": "OHL-specific overrides (all defaults fields are valid here too)",
+      "properties": {
+        "logo_dir": {
+          "type": "string",
+          "default": "assets/sports/ohl_logos",
+          "description": "Path to OHL logo PNGs"
+        },
+        "favorite_teams": { "type": "array", "items": { "type": "string" } },
+        "favorite_teams_only": { "type": "boolean" },
+        "live_games_to_show": { "type": "integer" },
+        "recent_games_to_show": { "type": "integer" },
+        "upcoming_games_to_show": { "type": "integer" },
+        "recent_days": { "type": "integer" },
+        "upcoming_days": { "type": "integer" },
+        "live_priority": { "type": "boolean" },
+        "show_records": { "type": "boolean" }
+      }
+    }
+  },
+  "required": ["display_mode"]
+}

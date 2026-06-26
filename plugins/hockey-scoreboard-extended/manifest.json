@@ -1,0 +1,57 @@
+{
+  "id": "hockey-scoreboard-extended",
+  "name": "Hockey Scoreboard Extended",
+  "version": "1.0.0",
+  "author": "hazplugins",
+  "description": "Live, recent, and upcoming hockey games for PWHL and OHL — leagues not covered by the official hockey-scoreboard plugin.",
+  "homepage": "https://github.com/your-username/ledmatrix-hazplugins/tree/main/plugins/hockey-scoreboard-extended",
+  "entry_point": "manager.py",
+  "class_name": "HockeyScoreboardExtendedPlugin",
+  "category": "sports",
+  "tags": ["hockey", "pwhl", "ohl", "sports", "scoreboard", "live-scores", "womens-hockey", "junior-hockey"],
+  "icon": "fas fa-hockey-puck",
+  "compatible_versions": [">=2.0.0"],
+  "requires": {
+    "python": ">=3.9",
+    "display_size": {
+      "min_width": 64,
+      "min_height": 32
+    }
+  },
+  "config_schema": "config_schema.json",
+  "update_interval": 60,
+  "default_duration": 15,
+  "display_modes": [
+    "pwhl_live",
+    "pwhl_recent",
+    "pwhl_upcoming",
+    "ohl_live",
+    "ohl_recent",
+    "ohl_upcoming"
+  ],
+  "api_requirements": [
+    {
+      "name": "PWHL API",
+      "required": true,
+      "description": "Official PWHL REST API for scores and schedules",
+      "url": "https://api.pwhl.com/v1/",
+      "rate_limit": "No official rate limit documented; use responsibly"
+    },
+    {
+      "name": "OHL HockeyTech API",
+      "required": true,
+      "description": "HockeyTech platform API used by the OHL",
+      "url": "https://lscluster.hockeytech.com/feed/",
+      "rate_limit": "No official rate limit documented; use responsibly"
+    }
+  ],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "released": "2026-06-26",
+      "ledmatrix_min": "2.0.0"
+    }
+  ],
+  "last_updated": "2026-06-26",
+  "verified": false
+}

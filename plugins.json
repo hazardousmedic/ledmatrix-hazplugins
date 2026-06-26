@@ -1,0 +1,20 @@
+{
+  "registry_version": "1.0.0",
+  "last_updated": "2026-06-26",
+  "plugins": [
+    {
+      "id": "hockey-scoreboard-extended",
+      "name": "Hockey Scoreboard Extended",
+      "latest_version": "1.0.0",
+      "author": "hazplugins",
+      "description": "Live, recent, and upcoming hockey games for PWHL and OHL — leagues not covered by the official hockey-scoreboard plugin.",
+      "category": "sports",
+      "tags": ["hockey", "pwhl", "ohl", "sports", "scoreboard", "live-scores", "womens-hockey", "junior-hockey"],
+      "icon": "fas fa-hockey-puck",
+      "plugin_path": "plugins/hockey-scoreboard-extended",
+      "repo_url": "https://github.com/your-username/ledmatrix-hazplugins",
+      "last_updated": "2026-06-26",
+      "verified": false
+    }
+  ]
+}
